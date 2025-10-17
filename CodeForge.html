@@ -1,0 +1,2336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CodeForge™ - C++ Browser IDE</title>
+    <script>
+        const TOOL_VERSION = '2.5.2'; // Clear Button Moved
+    </script>
+    <!-- Firebase Imports (Used for context, not yet active for file sync) -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Global variables provided by the environment
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : undefined;
+
+        // Note: Firebase is initialized here for future collaboration features, but file storage uses localStorage for the MVP.
+        if (Object.keys(firebaseConfig).length > 0) {
+            window.app = initializeApp(firebaseConfig);
+            window.db = getFirestore(window.app);
+            window.auth = getAuth(window.app);
+            
+            // Sign in anonymously if no token is provided, otherwise use custom token
+            if (initialAuthToken) {
+                signInWithCustomToken(window.auth, initialAuthToken).catch(e => console.error("Firebase Custom Auth Error:", e));
+            } else {
+                signInAnonymously(window.auth).catch(e => console.error("Firebase Anonymous Auth Error:", e));
+            }
+        }
+    </script>
+    <script src="https://unpkg.com/monaco-editor@latest/min/vs/loader.js"></script>
+    <style>
+        /* Base Dark Theme Variables */
+        :root {
+            --primary: #1a1a1a;
+            --secondary: #667eea;
+            --accent: #764ba2;
+            --accent-light: #8a6cbc;
+            --light: #f0f0f0;
+            --dark: #121212;
+            --success: #2ecc71;
+            --warning: #f59e0b;
+            --error: #e74c3c;
+            --shadow: 0 4px 6px rgba(0, 0, 0, 0.5);
+            --radius: 8px;
+        }
+
+        /* Light Theme Overrides */
+        body.light-theme {
+            --primary: #f8f8f8; /* Light background */
+            --dark: #ffffff;    /* Editor background/Header */
+            --light: #121212;   /* Text color */
+            --shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            --secondary: #3b82f6; /* Blue secondary */
+            --accent: #1e3a8a; /* Darker blue accent */
+            --accent-light: #3b82f6;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Inter', sans-serif;
+        }
+
+        body {
+            background: var(--primary);
+            color: var(--light);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        
+        /* Light Theme Specific Styling for Interface elements */
+        body.light-theme header,
+        body.light-theme .status-bar,
+        body.light-theme .editor-header,
+        body.light-theme .output-header {
+            background-color: var(--dark);
+            border-bottom-color: rgba(0, 0, 0, 0.1);
+            border-top-color: rgba(0, 0, 0, 0.1);
+        }
+
+        body.light-theme .output-content {
+            background: #ededed;
+            color: var(--light);
+            border-left-color: rgba(0, 0, 0, 0.1);
+        }
+        
+        body.light-theme, 
+        body.light-theme h1,
+        body.light-theme h2,
+        body.light-theme .status-message {
+            color: var(--light);
+        }
+
+        body.light-theme .header-info,
+        body.light-theme .compiler-info {
+            color: rgba(18, 18, 18, 0.6); /* Darker gray for subtle text */
+        }
+        
+        body.light-theme .resize-handle {
+            background: rgba(59, 130, 246, 0.3); /* Blue handle in light mode */
+        }
+        body.light-theme .resize-handle:hover {
+            background: rgba(59, 130, 246, 0.6);
+        }
+        body.light-theme .resize-handle:active {
+            background: rgba(59, 130, 246, 0.8);
+        }
+
+        /* --- Dropdown Menu Styles (File and Examples) --- */
+        .header-left-group {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .dropdown {
+            position: relative;
+            display: inline-block;
+        }
+
+        .dropdown-btn {
+            background: rgba(102, 126, 234, 0.15);
+            border: 1px solid rgba(102, 126, 234, 0.3);
+            color: var(--secondary);
+            padding: 0.6rem 1.2rem;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            border-radius: var(--radius);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.9rem;
+            position: relative;
+        }
+
+        /* Examples Dropdown Button inside the Controls bar */
+        .controls .dropdown-btn {
+             background: transparent;
+             border: 1px solid var(--secondary);
+             color: var(--secondary);
+        }
+        
+        /* Specific override for Examples button hover */
+        .controls .dropdown-btn:hover {
+            background: rgba(102, 126, 234, 0.1);
+            transform: none;
+            box-shadow: none;
+        }
+        
+        body.light-theme .controls .dropdown-btn {
+            background: transparent;
+        }
+        body.light-theme .controls .dropdown-btn:hover {
+            background: rgba(59, 130, 246, 0.1);
+        }
+
+        .dropdown-btn:hover {
+            /* Increased opacity for better contrast on hover */
+            background: rgba(102, 126, 234, 0.25);
+            border-color: var(--secondary);
+            transform: translateY(-1px);
+            box-shadow: var(--shadow);
+        }
+        
+        /* Distinct active state when menu is open */
+        .dropdown-btn.active {
+            background: rgba(102, 126, 234, 0.2); 
+            color: var(--secondary); 
+            font-weight: 600;
+        }
+        
+        /* File Menu arrow */
+        .header-left-group .dropdown-btn::after {
+            content: '▼';
+            font-size: 0.7rem;
+            margin-left: 0.3rem;
+            opacity: 0.7;
+            transition: transform 0.2s ease;
+        }
+
+        .header-left-group .dropdown-btn.active::after {
+            transform: rotate(180deg);
+        }
+        
+        /* Examples Menu arrow */
+        .controls .dropdown-btn::after {
+            content: '▼';
+            font-size: 0.7rem;
+            margin-left: 0.5rem;
+            opacity: 1;
+            transition: transform 0.2s ease;
+        }
+        .controls .dropdown-btn.active::after {
+            transform: rotate(180deg);
+        }
+
+
+        body.light-theme .dropdown-btn {
+            background: rgba(59, 130, 246, 0.1);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            color: var(--secondary);
+        }
+
+        body.light-theme .dropdown-btn:hover, 
+        body.light-theme .dropdown-btn.active {
+            background: rgba(59, 130, 246, 0.2);
+            border-color: var(--secondary);
+        }
+
+        .dropdown-content {
+            display: none;
+            position: absolute;
+            background-color: var(--dark);
+            min-width: 250px;
+            box-shadow: var(--shadow);
+            z-index: 20; /* Above editor content */
+            border-radius: var(--radius);
+            padding: 8px 0;
+            top: 100%; /* Position below the button */
+            left: 0;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transform: translateY(5px);
+            opacity: 0;
+            transition: transform 0.2s ease-out, opacity 0.2s ease-out;
+            pointer-events: none;
+        }
+        
+        .dropdown-content.show {
+            display: block;
+            transform: translateY(0);
+            opacity: 1;
+            pointer-events: auto;
+        }
+        
+        body.light-theme .dropdown-content {
+            border: 1px solid rgba(0, 0, 0, 0.1);
+        }
+
+        .dropdown-item {
+            color: var(--light);
+            padding: 10px 16px;
+            text-decoration: none;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            transition: background-color 0.1s;
+            font-size: 0.9rem;
+        }
+
+        .dropdown-item:hover {
+            background-color: var(--secondary);
+            color: white;
+        }
+        
+        .dropdown-item .shortcut {
+            font-size: 0.75rem;
+            opacity: 0.7;
+        }
+
+        .dropdown-divider {
+            height: 1px;
+            background: rgba(255, 255, 255, 0.1);
+            margin: 5px 0;
+        }
+        
+        body.light-theme .dropdown-divider {
+            background: rgba(0, 0, 0, 0.1);
+        }
+        /* End Dropdown Menu Styles */
+
+        /* --- File Manager Modal (Kept from v1.4.0) --- */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 1000;
+            display: none;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-content {
+            background: var(--dark);
+            padding: 20px;
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            width: 90%;
+            max-width: 500px;
+            max-height: 80vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        body.light-theme .modal-content {
+            background: var(--dark);
+            color: var(--light);
+            box-shadow: var(--shadow);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        body.light-theme .modal-header {
+            border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+        }
+
+        .modal-close-btn {
+            background: none;
+            border: none;
+            color: var(--light);
+            font-size: 1.5rem;
+            cursor: pointer;
+        }
+        
+        .file-list-container {
+            flex-grow: 1;
+            overflow-y: auto;
+            margin-top: 1rem;
+        }
+
+        .file-entry-modal {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.8rem 1rem;
+            cursor: pointer;
+            transition: background-color 0.1s ease;
+            color: var(--light);
+            font-size: 0.95rem;
+            border-radius: var(--radius);
+            margin-bottom: 4px;
+        }
+        
+        body.light-theme .file-entry-modal {
+             color: var(--light);
+        }
+
+        .file-entry-modal:hover {
+            background: rgba(102, 126, 234, 0.1);
+        }
+
+        .file-entry-modal.active {
+            background: var(--secondary);
+            color: white;
+            font-weight: 600;
+        }
+        
+        .file-entry-modal.active:hover {
+            background: var(--secondary);
+            color: white;
+        }
+        
+        .file-entry-name {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-grow: 1;
+        }
+        
+        .file-entry-icon {
+            color: var(--accent-light);
+        }
+
+        .file-entry-modal.active .file-entry-icon {
+            color: white;
+        }
+
+        .file-entry-modal .delete-btn {
+            background: none;
+            border: 1px solid transparent;
+            color: inherit;
+            font-size: 0.8rem;
+            cursor: pointer;
+            opacity: 0.8;
+            transition: opacity 0.2s ease, border-color 0.2s ease;
+            margin-left: 10px;
+            padding: 4px 8px;
+            border-radius: var(--radius);
+        }
+        
+        .file-entry-modal:hover .delete-btn {
+            opacity: 1;
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .file-entry-modal .delete-btn:hover {
+            color: var(--error);
+            border-color: var(--error);
+        }
+        
+        /* --- End File Manager Modal --- */
+
+        /* --- Splash Screen/Logo/Animations (Kept from v1.2.0) --- */
+
+        .splash-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: var(--primary);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            transition: opacity 0.8s ease, visibility 0.8s ease;
+        }
+
+        .splash-screen.hidden {
+            opacity: 0;
+            visibility: hidden;
+        }
+
+        .logo-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 2rem;
+        }
+
+        .logo-icon {
+            font-size: 4rem;
+            margin-bottom: 1.5rem;
+            animation: pulse 2s infinite;
+            background: linear-gradient(135deg, var(--secondary) 0%, var(--accent) 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+        }
+
+        .logo-text {
+            font-size: 4rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            position: relative;
+            overflow: visible;
+            margin: 0 60px;
+        }
+
+        .logo-word {
+            opacity: 0;
+            transform: translateY(20px);
+            animation: fadeInUp 0.8s forwards;
+            background: linear-gradient(135deg, var(--secondary) 0%, var(--accent) 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+        }
+
+        .logo-word.code {
+            animation-delay: 0.3s;
+        }
+
+        .logo-word.forge {
+            animation-delay: 0.6s;
+        }
+
+        .parenthesis {
+            font-size: 5rem;
+            font-weight: 300;
+            position: absolute;
+            opacity: 0;
+            background: linear-gradient(135deg, var(--secondary) 0%, var(--accent) 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+        }
+
+        .parenthesis.left {
+            left: -120px;
+            animation: slideInLeft 1s forwards 1.2s;
+        }
+
+        .parenthesis.right {
+            right: -120px;
+            animation: slideInRight 1s forwards 1.2s;
+        }
+
+        .loading-bar {
+            width: 300px;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 2px;
+            overflow: hidden;
+            margin-top: 2rem;
+        }
+
+        .loading-progress {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, var(--secondary), var(--accent));
+            border-radius: 2px;
+            animation: loading 2.5s ease-in-out forwards;
+        }
+
+        .tagline {
+            margin-top: 1.5rem;
+            font-size: 1.2rem;
+            opacity: 0;
+            animation: fadeIn 0.8s forwards 2s;
+            color: rgba(255, 255, 255, 0.7);
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); }
+        }
+
+        @keyframes fadeInUp {
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes fadeIn {
+            to {
+                opacity: 1;
+            }
+        }
+
+        @keyframes slideInLeft {
+            to {
+                opacity: 1;
+                left: -30px;
+            }
+        }
+
+        @keyframes slideInRight {
+            to {
+                opacity: 1;
+                right: -30px;
+            }
+        }
+
+        @keyframes loading {
+            0% { width: 0%; }
+            70% { width: 85%; }
+            100% { width: 100%; }
+        }
+
+        /* Main App */
+        .app-container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            opacity: 0;
+            transition: opacity 0.5s ease;
+            background: var(--primary);
+        }
+
+        .app-container.visible {
+            opacity: 1;
+        }
+
+        header {
+            background-color: var(--dark);
+            padding: 1rem 1.5rem;
+            box-shadow: var(--shadow);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            flex-shrink: 0;
+        }
+        
+        body.light-theme header {
+            border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .logo-icon-small {
+            font-size: 1.8rem;
+            background: linear-gradient(135deg, var(--secondary) 0%, var(--accent) 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+        }
+
+        .logo h1 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--secondary) 0%, var(--accent) 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+        }
+
+        .header-info {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            font-size: 0.9rem;
+            color: rgba(255, 255, 255, 0.7);
+        }
+        
+        /* Rest of the CSS remains the same as v1.4.0/v1.2.0 combined */
+
+        .container {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+            position: relative;
+            min-height: 0; /* Important for flex children */
+        }
+
+        /* Resizable Split Pane */
+        .split-pane {
+            display: flex;
+            width: 100%;
+            height: 100%;
+            position: relative;
+            flex-grow: 1;
+        }
+
+        .pane {
+            position: relative;
+            height: 100%;
+            transition: width 0.2s ease;
+            display: flex;
+            flex-direction: column;
+            min-width: 200px; /* Minimum width for responsiveness */
+        }
+
+        .editor-pane {
+            width: 60%;
+        }
+
+        .output-pane {
+            width: 40%;
+        }
+
+        /* Focus Mode - FIXED TO TAKE 100% */
+        .focus-mode .editor-pane {
+            width: 100% !important;
+        }
+
+        .focus-mode .output-pane {
+            display: none !important;
+        }
+
+        .output-focus-mode .output-pane {
+            width: 100% !important;
+        }
+
+        .output-focus-mode .editor-pane {
+            display: none !important;
+        }
+        /* End Focus Mode Fix */
+
+        .resize-handle {
+            position: absolute;
+            top: 0;
+            right: -5px;
+            width: 10px;
+            height: 100%;
+            background: rgba(102, 126, 234, 0.3);
+            cursor: col-resize;
+            z-index: 10;
+            transition: background-color 0.2s ease;
+        }
+
+        .resize-handle:hover {
+            background: rgba(102, 126, 234, 0.6);
+        }
+
+        .resize-handle:active {
+            background: rgba(102, 126, 234, 0.8);
+        }
+
+        /* Editor Section */
+        .editor-section {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: var(--dark);
+            height: 100%;
+            min-height: 0; /* Important for flex children */
+        }
+
+        .editor-header {
+            padding: 1rem 1.5rem;
+            background: rgba(33, 33, 33, 0.9);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            justify-content: space-between; /* Adjusted to space-between for filename + controls */
+            align-items: center;
+            flex-shrink: 0;
+        }
+        
+        body.light-theme .editor-header {
+            background: rgba(255, 255, 255, 0.9);
+        }
+        
+        .editor-filename {
+            font-size: 1rem;
+            font-weight: 500;
+            color: var(--light);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding-right: 1.5rem;
+        }
+
+        .editor-header h2 {
+            font-size: 1.1rem;
+            color: var(--light);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .controls {
+            display: flex;
+            gap: 0.8rem;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, var(--secondary) 0%, var(--accent) 100%);
+            color: white;
+            border: none;
+            padding: 0.6rem 1.2rem;
+            border-radius: var(--radius);
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.9rem;
+            flex-shrink: 0;
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow);
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent) 0%, var(--accent-light) 100%);
+        }
+
+        .btn-primary:hover {
+            background: linear-gradient(135deg, var(--accent-light) 0%, var(--accent) 100%);
+        }
+
+        .btn-outline {
+            background: transparent;
+            border: 1px solid var(--secondary);
+            color: var(--secondary);
+        }
+
+        .btn-outline:hover {
+            background: rgba(102, 126, 234, 0.1);
+        }
+
+        .editor-container {
+            flex: 1;
+            position: relative;
+            min-height: 0; /* Important for flex children */
+        }
+
+        #editor {
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Output Section */
+        .output-section {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: var(--dark);
+            height: 100%;
+            min-height: 0; /* Important for flex children */
+        }
+
+        .output-header {
+            padding: 1rem 1.5rem;
+            background: rgba(33, 33, 33, 0.9);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-shrink: 0;
+        }
+        
+        body.light-theme .output-header {
+            background: rgba(255, 255, 255, 0.9);
+        }
+
+        .output-header h2 {
+            font-size: 1.1rem;
+            color: var(--light);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .output-controls {
+            display: flex;
+            gap: 0.8rem;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        /* --- Input Area Integration (NEW) --- */
+        .input-container {
+            flex-shrink: 0;
+            padding: 1rem 1.5rem;
+            background: rgba(33, 33, 33, 0.9);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            /* Added transition for smoother hiding/showing */
+            transition: all 0.3s ease-out; 
+            overflow: hidden;
+        }
+        
+        body.light-theme .input-container {
+            background: rgba(255, 255, 255, 0.9);
+            border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+        }
+
+        /* Top row for Repetition Counter and main label */
+        .input-controls-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        .input-label {
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: rgba(255, 255, 255, 0.6);
+            display: block;
+        }
+        
+        /* Repetition control removed */
+
+        /* Wrapper for the Guide and Textarea */
+        .input-container-wrapper {
+            display: flex;
+            gap: 10px; /* Space between guide and textarea */
+            min-height: 80px; 
+            overflow: hidden; 
+        }
+
+        /* Dynamic Input Guide (Left Panel) */
+        #inputGuide {
+            /* Flex properties allow it to shrink/grow based on content */
+            flex-shrink: 0;
+            flex-grow: 0;
+            padding: 8px 4px 8px 8px; 
+            text-align: right; 
+            background: rgba(102, 126, 234, 0.1); /* Subtle background accent */
+            border: 1px solid rgba(102, 126, 234, 0.2);
+            border-radius: var(--radius);
+            font-family: 'Fira Code', monospace;
+            font-size: 0.85rem;
+            line-height: 1.4; /* Matches textarea line height */
+            color: var(--secondary);
+            white-space: pre; /* Essential for matching textarea line structure */
+            box-sizing: border-box;
+            overflow: hidden; /* Hide scrollbar if content exceeds area */
+            align-self: stretch; /* Stretch to match textarea height if it's dominant */
+        }
+        body.light-theme #inputGuide {
+            background: rgba(59, 130, 246, 0.1);
+            border: 1px solid rgba(59, 130, 246, 0.2);
+        }
+        
+        /* Program Input Textarea (Right Panel) */
+        #programInput {
+            flex-grow: 1; /* Takes up remaining space */
+            width: auto; 
+            height: auto !important; /* IMPORTANT: Must be auto to stretch with guide */
+            padding: 8px;
+            background: #1e1e1e;
+            color: var(--success); 
+            font-family: 'Fira Code', monospace;
+            font-size: 0.85rem;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: var(--radius);
+            resize: none; 
+            transition: all 0.3s ease;
+            color-scheme: dark; 
+            line-height: 1.4; /* Matches guide line height */
+        }
+        
+        #programInput::placeholder {
+            color: rgba(255, 255, 255, 0.4); 
+            font-style: italic;
+        }
+        
+        #programInput:focus {
+            outline: none;
+            border-color: var(--secondary);
+            box-shadow: 0 0 0 1px var(--secondary);
+        }
+        
+        body.light-theme #programInput {
+            background: #ededed;
+            color: var(--accent);
+            border: 1px solid rgba(0, 0, 0, 0.1);
+        }
+        body.light-theme #programInput::placeholder {
+            color: rgba(18, 18, 18, 0.4); 
+        }
+        /* --- End Input Area Integration --- */
+
+
+        .output-content {
+            flex: 1;
+            padding: 1rem;
+            background: #1e1e1e;
+            color: var(--light);
+            font-family: 'Fira Code', monospace;
+            font-size: 0.9rem;
+            line-height: 1.4;
+            overflow: auto;
+            white-space: pre-wrap;
+            min-height: 0; /* Important for flex children */
+        }
+
+        .output-content.success {
+            border-left: 4px solid var(--success);
+        }
+
+        .output-content.error {
+            border-left: 4px solid var(--error);
+        }
+
+        .output-content.warning {
+            border-left: 4px solid var(--warning);
+        }
+        
+        body.light-theme .output-content.success {
+            border-left: 4px solid var(--success);
+        }
+        body.light-theme .output-content.error {
+            border-left: 4px solid var(--error);
+        }
+        body.light-theme .output-content.warning {
+            border-left: 4px solid var(--warning);
+        }
+
+        .expand-btn {
+            background: transparent;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: rgba(255, 255, 255, 0.7);
+            width: 32px;
+            height: 32px;
+            border-radius: var(--radius);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+            flex-shrink: 0;
+        }
+        
+        body.light-theme .expand-btn {
+            border: 1px solid rgba(18, 18, 18, 0.3);
+            color: rgba(18, 18, 18, 0.7);
+        }
+
+        .expand-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: var(--light);
+            border-color: var(--secondary);
+        }
+        
+        body.light-theme .expand-btn:hover {
+            background: rgba(18, 18, 18, 0.1);
+            color: var(--light);
+            border-color: var(--secondary);
+        }
+
+        .focus-btn {
+            background: rgba(102, 126, 234, 0.2);
+            border: 1px solid var(--secondary);
+            color: var(--secondary);
+        }
+
+        .focus-btn:hover {
+            background: rgba(102, 126, 234, 0.3);
+        }
+
+        /* Status Bar */
+        .status-bar {
+            background-color: var(--dark);
+            padding: 0.6rem 1.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            font-size: 0.8rem;
+            flex-shrink: 0;
+        }
+        
+        body.light-theme .status-bar {
+            border-top: 1px solid rgba(0, 0, 0, 0.1);
+        }
+
+        .status-message {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .status-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--success);
+        }
+
+        .status-indicator.loading {
+            background: var(--warning);
+            animation: pulse 1.5s infinite;
+        }
+
+        .status-indicator.error {
+            background: var(--error);
+        }
+
+        .compiler-info {
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 0.8rem;
+        }
+
+        /* Responsive Design */
+        @media (max-width: 768px) {
+            .file-controls-header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 5px;
+            }
+            .header-info {
+                gap: 0.5rem;
+            }
+            
+            .split-pane {
+                flex-direction: column;
+            }
+            
+            .editor-pane, .output-pane {
+                width: 100% !important;
+                height: 50%;
+            }
+            
+            .resize-handle {
+                display: none;
+            }
+            
+            .controls, .output-controls {
+                gap: 0.5rem;
+            }
+            
+            .btn {
+                padding: 0.5rem 1rem;
+                font-size: 0.8rem;
+            }
+            
+            header {
+                padding: 0.8rem 1rem;
+            }
+            
+            .editor-header, .output-header {
+                padding: 0.8rem 1rem;
+            }
+            
+            /* Ensure editor and output headers still align elements correctly on mobile */
+            .editor-header {
+                justify-content: space-between; 
+            }
+        }
+
+        @media (max-width: 480px) {
+            .logo h1 {
+                font-size: 1.2rem;
+            }
+            
+            .header-info {
+                font-size: 0.8rem;
+            }
+            
+            .editor-header h2, .output-header h2 {
+                font-size: 1rem;
+            }
+            
+            .controls, .output-controls {
+                gap: 0.3rem;
+            }
+            
+            .btn {
+                padding: 0.4rem 0.8rem;
+                font-size: 0.75rem;
+            }
+            
+            .expand-btn {
+                width: 28px;
+                height: 28px;
+                font-size: 0.9rem;
+            }
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #2c2c2c;
+        }
+        
+        body.light-theme ::-webkit-scrollbar-track {
+            background: #cccccc;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #555;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #777;
+        }
+        
+        body.light-theme ::-webkit-scrollbar-thumb {
+            background: #999;
+        }
+        body.light-theme ::-webkit-scrollbar-thumb:hover {
+            background: #777;
+        }
+    </style>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body onclick="closeFileMenu(event); closeExamplesMenu(event)">
+    <!-- File Manager Modal -->
+    <div id="fileManagerModal" class="modal-overlay" onclick="closeFileManagerModal(event)">
+        <div class="modal-content" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h3 style="color: var(--secondary); font-weight: 700;">Manage Project Files</h3>
+                <button class="modal-close-btn" onclick="closeFileManagerModal()">×</button>
+            </div>
+            <p style="font-size: 0.85rem; margin-bottom: 10px; color: rgba(255, 255, 255, 0.7);">Select a file to switch to, or click "×" to delete it.</p>
+            <div class="file-list-container" id="fileTree">
+                <!-- File entries rendered here -->
+            </div>
+            <button class="btn btn-primary" style="margin-top: 15px;" onclick="createNewFileAndSwitch(true)">
+                + Create New File
+            </button>
+        </div>
+    </div>
+
+    <!-- Splash Screen -->
+    <div class="splash-screen" id="splashScreen">
+        <div class="logo-container">
+            <div class="logo-icon">⚙️</div>
+            <div class="logo-text">
+                <span class="parenthesis left">{</span>
+                <span class="logo-word code">Code</span>
+                <span class="logo-word forge">Forge™</span>
+                <span class="parenthesis right">}</span>
+            </div>
+        </div>
+        <div class="loading-bar">
+            <div class="loading-progress"></div>
+        </div>
+        <div class="tagline">Compile • Execute • Debug</div>
+    </div>
+
+    <!-- Main Application -->
+    <div class="app-container" id="appContainer">
+        <header>
+            <div class="header-left-group">
+                <div class="logo">
+                    <div class="logo-icon-small">⚙️</div>
+                    <h1>CodeForge™</h1>
+                </div>
+                <!-- ENHANCED: File Menu Button with better styling -->
+                <div class="dropdown">
+                    <button class="dropdown-btn" id="fileMenuButton" onclick="toggleFileMenu(event)">
+                        📁 File
+                    </button>
+                    <div id="fileDropdown" class="dropdown-content">
+                        <div class="dropdown-item" onclick="createNewFileAndSwitch()">
+                            <span>New File...</span>
+                            <span class="shortcut">Ctrl+N</span>
+                        </div>
+                        <div class="dropdown-item" onclick="openFileManagerModal()">
+                            <span>Manage Project...</span>
+                            <span class="shortcut">Ctrl+O</span>
+                        </div>
+                        <div class="dropdown-divider"></div>
+                        <div class="dropdown-item" onclick="exportActiveFile()">
+                            <span>Export Active File...</span>
+                            <span class="shortcut">Ctrl+S</span>
+                        </div>
+                    </div>
+                </div>
+                <!-- End Enhanced File Menu Button -->
+            </div>
+            <div class="header-info">
+                <span>C++ Browser IDE</span>
+            </div>
+        </header>
+
+        <div class="container">
+            <!-- Removed File Sidebar. Split Pane takes full width -->
+            <div class="split-pane" id="splitPane">
+                <!-- Editor Pane -->
+                <div class="pane editor-pane">
+                    <section class="editor-section">
+                        <div class="editor-header">
+                            <!-- Display Active File Name in the editor's header -->
+                            <span class="editor-filename" id="currentFileName">
+                                📁 main.cpp
+                            </span>
+                            <div class="controls">
+                                <button class="btn btn-primary" onclick="runCode()">
+                                    <span>▶</span>
+                                    Run Code
+                                </button>
+                                
+                                <!-- NEW: Examples Dropdown Menu -->
+                                <div class="dropdown">
+                                    <button class="btn btn-outline dropdown-btn" id="examplesMenuButton" onclick="toggleExamplesMenu(event)">
+                                        <span>📚</span>
+                                        Examples
+                                    </button>
+                                    <div id="examplesDropdown" class="dropdown-content" style="min-width: 220px;">
+                                        <div class="dropdown-item" onclick="loadExampleAndClose('LoopInputDemo.cpp')">
+                                            <span>Loop Input Demo</span>
+                                        </div>
+                                        <div class="dropdown-item" onclick="loadExampleAndClose('InteractiveInput.cpp')">
+                                            <span>Basic Two-Variable</span>
+                                        </div>
+                                        <div class="dropdown-divider"></div>
+                                        <div class="dropdown-item" onclick="loadExampleAndClose('Fibonacci.cpp')">
+                                            <span>Fibonacci Sequence</span>
+                                        </div>
+                                        <div class="dropdown-item" onclick="loadExampleAndClose('SimpleCalc.cpp')">
+                                            <span>Simple Calculator</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <!-- END Examples Dropdown -->
+                                
+                                <button class="expand-btn focus-btn" onclick="toggleFocusMode('editor')" title="Focus on Editor">
+                                    ⛶
+                                </button>
+                            </div>
+                        </div>
+                        <div class="editor-container">
+                            <div id="editor"></div>
+                        </div>
+                    </section>
+                </div>
+
+                <!-- Resize Handle -->
+                <div class="resize-handle" id="resizeHandle"></div>
+
+                <!-- Output Pane -->
+                <div class="pane output-pane">
+                    <section class="output-section">
+                        <div class="output-header">
+                            <h2>
+                                <span>📤</span>
+                                Compilation Output
+                            </h2>
+                            <div class="output-controls">
+                                <!-- MOVED: Clear button is now here -->
+                                <button class="btn btn-outline" onclick="clearOutput()">
+                                    <span>🗑️</span>
+                                    Clear
+                                </button>
+                                <!-- Persistent Theme Toggle Button -->
+                                <button id="themeToggleButton" class="expand-btn" onclick="toggleTheme()" title="Switch to Light Theme">
+                                    ☀️
+                                </button>
+                                <button class="expand-btn focus-btn" onclick="toggleFocusMode('output')" title="Focus on Output">
+                                    ⛶
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- NEW: Collapsible Integrated Program Input (stdin) -->
+                        <div id="programInputSection" class="input-container">
+                            <!-- Input Controls Header with Repetition Counter -->
+                            <div class="input-controls-header">
+                                <label for="programInput" class="input-label" id="inputLabel">
+                                    <!-- Dynamic label content is set by JS -->
+                                </label>
+                                <!-- Repetition Control Removed -->
+                            </div>
+                            <!-- Wrapper for the side-by-side guide and input field -->
+                            <div class="input-container-wrapper">
+                                <!-- Left: Dynamic Input Guide -->
+                                <div id="inputGuide" spellcheck="false">
+                                    <!-- Content generated by JS -->
+                                </div>
+                                <!-- Right: User Input Area -->
+                                <textarea id="programInput" placeholder="" spellcheck="false"></textarea>
+                            </div>
+                        </div>
+                        <!-- End Program Input -->
+                        
+                        <div class="output-content" id="output">
+// Welcome to CodeForge™
+// Write your C++ code and click "Run Code" to compile and execute
+// Uses Piston API with real GCC compiler
+                        </div>
+                    </section>
+                </div>
+            </div>
+        </div>
+
+        <div class="status-bar">
+            <div class="status-message">
+                <div class="status-indicator" id="statusIndicator"></div>
+                <span id="statusText">Ready to compile</span>
+            </div>
+            <div class="compiler-info">
+                GCC 10.2.0 via Piston API • CodeForge™ v<span id="versionText"></span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Initialize Monaco Editor
+        require.config({ 
+            paths: { 
+                'vs': 'https://unpkg.com/monaco-editor@latest/min/vs' 
+            } 
+        });
+
+        let editor;
+        let isDarkTheme = true;
+        let isResizing = false;
+        let currentFocusMode = null; // 'editor', 'output', or null
+        
+        // --- File Management State ---
+        const LOCAL_STORAGE_KEY = 'codeforge_cpp_project';
+        let projectFiles = {}; // { id: { name: string, content: string } }
+        let activeFileId = null; 
+        let fileCounter = 1; // Used for unique ID generation
+        
+        // --- Example Definitions ---
+        const EXAMPLES = [
+            {
+                name: 'LoopInputDemo.cpp', 
+                displayName: 'Loop Input Demo',
+                content: `// Loop Input Demo (Requires 3 sets of input)
+#include <iostream>
+#include <string>
+using namespace std;
+
+int main() {
+    string name;
+    int score;
+    int repetitions = 3; 
+
+    cout << "Processing " << repetitions << " Student Scores:" << endl;
+    
+    // The program expects 3 sets of Name and Score inputs
+    for (int i = 0; i < repetitions; ++i) {
+        cout << "-- Student #" << i + 1 << " --" << endl;
+        cout << "Enter name: ";
+        cin >> name; // Input 1 of the pattern
+        cout << "Enter score: ";
+        cin >> score; // Input 2 of the pattern
+        cout << "Result: " << name << " got " << score << "%" << endl;
+    }
+    
+    cout << "Report Complete." << endl;
+    return 0;
+}`,
+                input: "Jane\n95\nJohn\n88\nAlice\n75\n" // FULL sequential input for 3 iterations - UX FIX
+            },
+            {
+                name: 'InteractiveInput.cpp', 
+                displayName: 'Basic Two-Variable Input',
+                content: `// Interactive Input Example (Two Variables)
+#include <iostream>
+#include <string>
+using namespace std;
+
+int main() {
+    string name;
+    int age;
+    
+    // Input 1: Name
+    cout << "Enter your name: ";
+    cin >> name; 
+    
+    // Input 2: Age
+    cout << "Enter your age: ";
+    cin >> age; 
+    
+    cout << "Hello, " << name << "! You are " << age << " years old." << endl;
+    return 0;
+}`,
+                input: "Jane\n30\n" // UX FIX
+            },
+            {
+                name: 'Fibonacci.cpp', 
+                displayName: 'Fibonacci Sequence',
+                content: `// Fibonacci Sequence Example
+#include <iostream>
+using namespace std;
+
+int main() {
+    int n = 15;
+    int a = 0, b = 1;
+    
+    cout << "Fibonacci Sequence: ";
+    for (int i = 0; i < n; i++) {
+        cout << a << " ";
+        int next = a + b;
+        a = b;
+        b = next;
+    }
+    cout << endl;
+    return 0;
+}`,
+                input: ""
+            },
+            {
+                name: 'SimpleCalc.cpp', 
+                displayName: 'Simple Calculator (No Input)',
+                content: `// Simple Calculator Example (Pre-set values)
+#include <iostream>
+using namespace std;
+
+int main() {
+    double num1 = 10.5;
+    char op = '*';
+    double num2 = 2.0;
+    
+    switch(op) {
+        case '+':
+            cout << "Result: " << num1 + num2 << endl;
+            break;
+        case '-':
+            cout << "Result: " << num1 - num2 << endl;
+            break;
+        case '*':
+            cout << "Result: " << num1 * num2 << endl;
+            break;
+        case '/':
+            if(num2 != 0)
+                cout << "Result: " << num1 / num2 << endl;
+            else
+                cout << "Error: Division by zero!" << endl;
+            break;
+        default:
+            cout << "Invalid operator!" << endl;
+    }
+    return 0;
+}`,
+                input: ""
+            }
+        ];
+        
+        // --- File Management Functions ---
+        
+        function getFileIdFromUniqueName(name) {
+            return name.replace(/\./g, '_').toLowerCase();
+        }
+
+        function initializeFiles() {
+            const savedProject = localStorage.getItem(LOCAL_STORAGE_KEY);
+            
+            if (savedProject) {
+                try {
+                    const { files, activeId, counter } = JSON.parse(savedProject);
+                    projectFiles = files;
+                    activeFileId = activeId;
+                    fileCounter = counter || 1;
+                } catch (e) {
+                    console.error("Failed to load project from localStorage:", e);
+                    // Fallback to default if load fails
+                    localStorage.removeItem(LOCAL_STORAGE_KEY);
+                    projectFiles = {};
+                }
+            }
+
+            // Ensure there is at least a main.cpp
+            if (Object.keys(projectFiles).length === 0) {
+                const id = getFileIdFromUniqueName('main.cpp');
+                projectFiles[id] = { 
+                    name: 'main.cpp', 
+                    content: getInitialCode(),
+                    id: id
+                };
+                activeFileId = id;
+                fileCounter = 2;
+            }
+            
+            // If activeFileId is invalid, reset to the first file
+            if (!projectFiles[activeFileId]) {
+                activeFileId = Object.keys(projectFiles)[0];
+            }
+        }
+
+        function saveProject() {
+            localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({
+                files: projectFiles,
+                activeId: activeFileId,
+                counter: fileCounter
+            }));
+            // Update status to confirm auto-save
+            const statusText = document.getElementById('statusText');
+            if (statusText.textContent !== 'Compilation successful' && statusText.textContent !== 'Compilation failed') {
+                statusText.textContent = `Auto-saved: ${projectFiles[activeFileId].name}`;
+                setTimeout(() => {
+                    if (statusText.textContent.startsWith('Auto-saved')) {
+                        statusText.textContent = 'Ready to compile';
+                    }
+                }, 2000);
+            }
+        }
+
+        function renderFileTree() {
+            const fileTree = document.getElementById('fileTree');
+            fileTree.innerHTML = '';
+            
+            // Ensure files are sorted alphabetically for better UX
+            const sortedFiles = Object.values(projectFiles).sort((a, b) => a.name.localeCompare(b.name));
+            
+            sortedFiles.forEach(file => {
+                const isActive = file.id === activeFileId;
+                
+                const fileEntry = document.createElement('div');
+                fileEntry.className = `file-entry-modal ${isActive ? 'active' : ''}`;
+                fileEntry.setAttribute('data-file-id', file.id);
+                fileEntry.onclick = () => switchFile(file.id);
+
+                const fileNameSpan = document.createElement('span');
+                fileNameSpan.className = 'file-entry-name';
+                fileNameSpan.innerHTML = `<span class="file-entry-icon">📄</span> ${file.name}`;
+                
+                const deleteButton = document.createElement('button');
+                deleteButton.className = 'delete-btn';
+                deleteButton.innerHTML = '× Delete';
+                deleteButton.title = `Delete ${file.name}`;
+                deleteButton.onclick = (e) => {
+                    e.stopPropagation();
+                    deleteFile(file.id);
+                };
+                
+                fileEntry.appendChild(fileNameSpan);
+                if (!isActive) { // Prevent deleting the active file while viewing it in the modal
+                     fileEntry.appendChild(deleteButton);
+                } else {
+                     const status = document.createElement('span');
+                     status.textContent = 'ACTIVE';
+                     status.style.fontSize = '0.7rem';
+                     status.style.fontWeight = '500';
+                     status.style.padding = '2px 6px';
+                     status.style.borderRadius = '4px';
+                     status.style.backgroundColor = 'rgba(255, 255, 255, 0.2)';
+                     status.style.color = 'white';
+                     fileEntry.appendChild(status);
+                }
+                
+                fileTree.appendChild(fileEntry);
+            });
+        }
+        
+        function toggleFileMenu(event) {
+            event.stopPropagation(); // Prevent body click handler from closing immediately
+            const dropdown = document.getElementById('fileDropdown');
+            const button = document.getElementById('fileMenuButton');
+            
+            closeExamplesMenu(); // Close examples menu
+
+            // Close if already open
+            if (dropdown.classList.contains('show')) {
+                closeFileMenu();
+            } else {
+                // Open and set active state
+                dropdown.classList.add('show');
+                button.classList.add('active');
+            }
+        }
+        
+        function closeFileMenu() {
+            document.getElementById('fileDropdown').classList.remove('show');
+            document.getElementById('fileMenuButton').classList.remove('active');
+        }
+
+        function openFileManagerModal() {
+            closeFileMenu(); // Close the dropdown first
+            renderFileTree();
+            document.getElementById('fileManagerModal').style.display = 'flex';
+        }
+
+        function closeFileManagerModal(event) {
+            if (event && event.target.id !== 'fileManagerModal') return;
+            document.getElementById('fileManagerModal').style.display = 'none';
+        }
+
+        function switchFile(id) {
+            // 1. Save current editor content before switching
+            saveFileContent(); 
+
+            // 2. Set new active file
+            activeFileId = id;
+            
+            // 3. Update Monaco Editor
+            if (editor) {
+                editor.setValue(projectFiles[id].content);
+            }
+
+            // 4. Update UI
+            document.getElementById('currentFileName').textContent = `📁 ${projectFiles[id].name}`;
+            closeFileManagerModal();
+            saveProject();
+            updateInputGuide(); // <--- UPDATE INPUT GUIDE
+            
+            showMessage(`Switched to ${projectFiles[id].name}`, 'info');
+        }
+
+        function saveFileContent() {
+            if (editor && activeFileId && projectFiles[activeFileId]) {
+                projectFiles[activeFileId].content = editor.getValue();
+                saveProject();
+                updateInputGuide(); // <--- UPDATE INPUT GUIDE on save/edit
+            }
+        }
+        
+        function createNewFileAndSwitch(fromModal = false) {
+            let newName = `file${fileCounter}.cpp`;
+            let newId = getFileIdFromUniqueName(newName);
+            
+            // Ensure unique name
+            while (projectFiles[newId]) {
+                fileCounter++;
+                newName = `file${fileCounter}.cpp`;
+                newId = getFileIdFromUniqueName(newName);
+            }
+
+            projectFiles[newId] = {
+                name: newName,
+                content: getInitialCode().replace('main.cpp', newName).replace('Welcome', `New file: ${newName}`),
+                id: newId
+            };
+            fileCounter++;
+            
+            // Switch to the new file immediately
+            switchFile(newId);
+            closeFileMenu();
+            if (fromModal) {
+                 closeFileManagerModal();
+            }
+            showMessage(`${newName} created and active.`, 'success');
+        }
+        
+        function deleteFile(id) {
+            if (Object.keys(projectFiles).length === 1) {
+                showMessage('Cannot delete the last file in the project.', 'error');
+                return;
+            }
+            
+            const deletedName = projectFiles[id].name;
+            delete projectFiles[id];
+            
+            if (id === activeFileId) {
+                // If the active file was deleted, switch to the first remaining file
+                const fileIds = Object.keys(projectFiles);
+                const nextId = fileIds[0];
+                activeFileId = nextId;
+                
+                // Update editor and UI to the new active file
+                if (editor) {
+                    editor.setValue(projectFiles[nextId].content);
+                }
+                document.getElementById('currentFileName').textContent = `📁 ${projectFiles[nextId].name}`;
+            }
+            
+            renderFileTree(); // Refresh the modal file list
+            saveProject();
+            updateInputGuide(); // <--- UPDATE INPUT GUIDE
+            showMessage(`${deletedName} deleted.`, 'success');
+        }
+        
+        function exportActiveFile() {
+            saveFileContent(); // Ensure latest content is saved
+            const activeFile = projectFiles[activeFileId];
+
+            if (!activeFile) {
+                showMessage('No file selected to export.', 'error');
+                return;
+            }
+
+            const blob = new Blob([activeFile.content], { type: 'text/plain' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = activeFile.name;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            closeFileMenu();
+            showMessage(`Exported ${activeFile.name}.`, 'success');
+        }
+        
+        /**
+         * Parses the active C++ code and generates a dynamic guide 
+         * based on the 'cin >> variable' statements.
+         */
+        function updateInputGuide() {
+            const activeFile = projectFiles[activeFileId];
+            if (!activeFile) return;
+
+            const code = activeFile.content;
+            // Regex to find cin >> variable, capturing the variable name (Group 1)
+            const cinMatches = Array.from(code.matchAll(/cin\s*>>\s*(\w+)/g));
+            const count = cinMatches.length;
+            
+            const inputSection = document.getElementById('programInputSection');
+            const inputElement = document.getElementById('programInput');
+            const guideElement = document.getElementById('inputGuide');
+            const labelElement = document.getElementById('inputLabel');
+            
+            let multiplier = 1;
+            
+            // 1. Heuristic to detect hardcoded repetition count (e.g., for loop examples)
+            // Look for lines like 'int repetitions = 3;' or 'repetitions = 3;'
+            const multiplierMatch = code.match(/repetitions\s*=\s*(\d+);/i);
+            if (multiplierMatch && count > 0) {
+                multiplier = parseInt(multiplierMatch[1], 10);
+                // Safety check to prevent massive UI rendering issues
+                if (multiplier > 10) multiplier = 10; 
+            }
+
+            let effectiveTotalInputs = count * multiplier; // Calculate the full expected input length
+            
+            let guideContent = '';
+            let newLabel = '';
+            
+            if (count > 0) {
+                // COLLAPSIBLE FIX: SHOW the section
+                inputSection.style.display = 'block';
+
+                // Label updated to reflect the effective total inputs
+                newLabel = `**Program Input (Required Answers):** Your code requires **${effectiveTotalInputs}** input(s) sequentially. Enter them below, one per line.`;
+                
+                let baseInputs = [];
+                cinMatches.forEach((match) => {
+                    baseInputs.push(match[1]); // Store just the variable name
+                });
+                
+                // --- FIX APPLIED: Generate the FULL sequential list based on multiplier ---
+                let expandedGuideLines = [];
+                let placeholderLines = [];
+
+                const placeholderDefaults = ["Jane", "95", "John", "88", "Alice", "75", "Bob", "60"];
+
+                for (let rep = 0; rep < multiplier; rep++) {
+                    baseInputs.forEach((variableName, index) => {
+                        expandedGuideLines.push(`>> ${variableName}`);
+                        
+                        // Placeholder alignment for the full expanded list (limited to 8 lines)
+                        const placeholderIndex = (rep * baseInputs.length) + index;
+                        if (placeholderLines.length < 8) { 
+                            placeholderLines.push(placeholderDefaults[placeholderIndex % placeholderDefaults.length]);
+                        }
+                    });
+                }
+                
+                // Add a final newline to ensure the input field has proper height, especially when empty
+                guideContent = expandedGuideLines.join('\n') + '\n';
+                inputElement.setAttribute('placeholder', placeholderLines.join('\n'));
+                
+                // --- END FIX ---
+
+
+            } else {
+                // COLLAPSIBLE FIX: HIDE the section
+                inputSection.style.display = 'none';
+
+                // No inputs detected
+                guideContent = '';
+                newLabel = '**Program Input:** This file does not require user input.';
+                inputElement.setAttribute('placeholder', '');
+            }
+
+            // Apply the dynamic content
+            labelElement.innerHTML = newLabel;
+            guideElement.innerHTML = guideContent; 
+            
+            // If there's no input needed, clear the text area to prevent accidental errors
+            if (count === 0 && inputElement.value.trim() !== '') {
+                // Keep the value if user already typed something, just advise them.
+                inputElement.setAttribute('placeholder', 'No inputs expected. You may clear this box.');
+            }
+        }
+        
+        // --- Examples Dropdown Functions ---
+        
+        function toggleExamplesMenu(event) {
+            event.stopPropagation();
+            const dropdown = document.getElementById('examplesDropdown');
+            const button = document.getElementById('examplesMenuButton');
+            
+            closeFileMenu(); // Ensure File menu is closed
+            
+            if (dropdown.classList.contains('show')) {
+                closeExamplesMenu();
+            } else {
+                dropdown.classList.add('show');
+                button.classList.add('active');
+            }
+        }
+        
+        function closeExamplesMenu() {
+            const dropdown = document.getElementById('examplesDropdown');
+            const button = document.getElementById('examplesMenuButton');
+            if (dropdown) dropdown.classList.remove('show');
+            if (button) button.classList.remove('active');
+        }
+
+        function loadExampleAndClose(exampleName) {
+            loadExample(exampleName);
+            closeExamplesMenu();
+        }
+        
+        // --- Core Application Logic ---
+
+        function init() {
+            // Load files from localStorage before initializing the editor
+            initializeFiles(); 
+
+            setTimeout(() => {
+                const splashScreen = document.getElementById('splashScreen');
+                const appContainer = document.getElementById('appContainer');
+                
+                splashScreen.classList.add('hidden');
+                setTimeout(() => {
+                    appContainer.classList.add('visible');
+                    initializeEditor();
+                    setupResizeHandler();
+                    setupResponsiveHandling();
+                    updateInputGuide(); // Initialize guide content after editor loads
+                    
+                    // Set the version text in the status bar now that TOOL_VERSION is defined
+                    document.getElementById('versionText').textContent = TOOL_VERSION;
+                }, 800);
+            }, 3000);
+        }
+
+        function getInitialCode() {
+            return `// CodeForge™ - C++ Browser IDE
+#include <iostream>
+#include <string>
+using namespace std;
+
+int main() {
+    cout << "🚀 Welcome to CodeForge™!" << endl;
+    cout << "==========================" << endl;
+    
+    // To use interactive input (cin >>), enter ALL answers below, one per line.
+    
+    // Example: Use the 'Examples' dropdown above to load a demo.
+    
+    /*
+    string name;
+    int age;
+    
+    cout << "Enter your name: ";
+    cin >> name;
+    
+    cout << "Enter your age: ";
+    cin >> age;
+    
+    cout << "Hello, " << name << "! You are " << age << " years old." << endl;
+    */
+    
+    cout << "🎉 Program executed successfully!" << endl;
+    return 0;
+}`;
+        }
+
+        function initializeEditor() {
+            require(['vs/editor/editor.main'], function() {
+                const activeFile = projectFiles[activeFileId];
+                
+                editor = monaco.editor.create(document.getElementById('editor'), {
+                    value: activeFile ? activeFile.content : getInitialCode(),
+                    language: 'cpp',
+                    theme: 'vs-dark',
+                    fontSize: 14,
+                    lineHeight: 1.4,
+                    fontFamily: "'Fira Code', monospace",
+                    automaticLayout: true,
+                    minimap: { enabled: true },
+                    scrollBeyondLastLine: false,
+                    renderLineHighlight: 'all',
+                    cursorBlinking: 'smooth',
+                    wordWrap: 'on'
+                });
+                
+                // Set up auto-save on content change
+                editor.onDidChangeModelContent(() => {
+                    saveFileContent();
+                });
+                
+                // Set initial filename text
+                document.getElementById('currentFileName').textContent = `📁 ${activeFile.name}`;
+            });
+        }
+        
+        // --- Existing Functions (Resize, Focus Mode, Compile, etc.) ---
+
+        function setupResizeHandler() {
+            const resizeHandle = document.getElementById('resizeHandle');
+            const editorPane = document.querySelector('.editor-pane');
+            const outputPane = document.querySelector('.output-pane');
+            const container = document.querySelector('.container');
+
+            resizeHandle.addEventListener('mousedown', function(e) {
+                if (currentFocusMode) return; // Don't allow resizing in focus mode
+                isResizing = true;
+                startX = e.clientX;
+                startWidth = parseInt(document.defaultView.getComputedStyle(editorPane).width, 10);
+                document.addEventListener('mousemove', handleMouseMove);
+                document.addEventListener('mouseup', stopResize);
+            });
+
+            function handleMouseMove(e) {
+                if (!isResizing) return;
+                
+                const width = startWidth + (e.clientX - startX);
+                const containerWidth = container.clientWidth;
+                const minWidth = 200; // Minimum width for both panes
+                
+                if (width > minWidth && width < containerWidth - minWidth) {
+                    editorPane.style.width = width + 'px';
+                    outputPane.style.width = (containerWidth - width) + 'px';
+                }
+            }
+
+            function stopResize() {
+                isResizing = false;
+                document.removeEventListener('mousemove', handleMouseMove);
+                document.removeEventListener('mouseup', stopResize);
+            }
+        }
+
+        function setupResponsiveHandling() {
+            // Handle window resize for responsive behavior
+            window.addEventListener('resize', function() {
+                if (window.innerWidth <= 768) {
+                    // On mobile, ensure both panes are visible
+                    exitFocusMode();
+                }
+            });
+        }
+
+        function toggleFocusMode(mode) {
+            const splitPane = document.getElementById('splitPane');
+            const editorPane = document.querySelector('.editor-pane');
+            const outputPane = document.querySelector('.output-pane');
+            const editorFocusBtn = document.querySelector('.editor-pane .focus-btn');
+            const outputFocusBtn = document.querySelector('.output-pane .focus-btn');
+            
+            closeFileMenu(); // Close menu if focus mode is activated
+
+            if (currentFocusMode === mode) {
+                // Exit focus mode
+                exitFocusMode();
+            } else {
+                // Clear any inline width set by the resize handler to allow CSS to take 100%
+                editorPane.style.width = '';
+                outputPane.style.width = '';
+                
+                // Enter focus mode
+                currentFocusMode = mode;
+                
+                if (mode === 'editor') {
+                    splitPane.classList.add('focus-mode');
+                    outputPane.style.display = 'none'; // Ensure manual hide for focus
+                    editorFocusBtn.innerHTML = '⛷'; // Change to "exit" icon
+                    editorFocusBtn.title = 'Exit Focus Mode';
+                } else if (mode === 'output') {
+                    splitPane.classList.add('output-focus-mode');
+                    editorPane.style.display = 'none'; // Ensure manual hide for focus
+                    outputFocusBtn.innerHTML = '⛷'; // Change to "exit" icon
+                    outputFocusBtn.title = 'Exit Focus Mode';
+                }
+                
+                // Update status
+                const statusText = document.getElementById('statusText');
+                statusText.textContent = mode === 'editor' ? 'Editor focus mode' : 'Output focus mode';
+            }
+            
+            // Trigger layout update for Monaco editor
+            setTimeout(() => {
+                if (editor) {
+                    editor.layout();
+                }
+            }, 100);
+        }
+
+        function exitFocusMode() {
+            const splitPane = document.getElementById('splitPane');
+            const editorPane = document.querySelector('.editor-pane');
+            const outputPane = document.querySelector('.output-pane');
+            const editorFocusBtn = document.querySelector('.editor-pane .focus-btn');
+            const outputFocusBtn = document.querySelector('.output-pane .focus-btn');
+            
+            // Clear inline styles to restore CSS defaults (60%/40%)
+            editorPane.style.width = '';
+            outputPane.style.width = '';
+            editorPane.style.display = 'flex'; // Restore display for all panes
+            outputPane.style.display = 'flex';
+
+            splitPane.classList.remove('focus-mode', 'output-focus-mode');
+            editorFocusBtn.innerHTML = '⛶';
+            editorFocusBtn.title = 'Focus on Editor';
+            outputFocusBtn.innerHTML = '⛶';
+            outputFocusBtn.title = 'Focus on Output';
+            
+            currentFocusMode = null;
+            
+            const statusText = document.getElementById('statusText');
+            statusText.textContent = 'Ready to compile';
+            
+            // Trigger layout update for Monaco editor
+            setTimeout(() => {
+                if (editor) {
+                    editor.layout();
+                }
+            }, 100);
+        }
+
+        async function runCode() {
+            // Save current file content before running
+            saveFileContent();
+            
+            // Get program input from the dedicated textarea
+            let programInput = document.getElementById('programInput').value;
+
+            // The input is sent directly as entered by the user.
+            let stdinToSend = programInput; 
+
+            // For MVP: only compile the active file's content
+            const activeFile = projectFiles[activeFileId];
+            if (!activeFile) {
+                document.getElementById('output').textContent = "❌ No active file to compile.";
+                return;
+            }
+            
+            const filesToCompile = [{
+                name: activeFile.name,
+                content: activeFile.content
+            }];
+            
+            const output = document.getElementById('output');
+            const statusIndicator = document.getElementById('statusIndicator');
+            const statusText = document.getElementById('statusText');
+            
+            // Update UI
+            output.textContent = "🔄 Compiling your C++ code...";
+            output.className = 'output-content';
+            statusIndicator.className = 'status-indicator loading';
+            statusText.textContent = `Compiling ${activeFile.name} with GCC...`;
+            
+            try {
+                // Pass the programInput as stdin
+                const result = await compileWithPiston(filesToCompile, stdinToSend);
+                
+                // Determine output type and update UI
+                if (result.includes('error:') || result.includes('Error:') || result.includes('failed')) {
+                    output.className = 'output-content error';
+                    statusIndicator.className = 'status-indicator error';
+                    statusText.textContent = 'Compilation failed';
+                } else if (result.includes('warning:')) {
+                    output.className = 'output-content warning';
+                    statusIndicator.className = 'status-indicator';
+                    statusText.textContent = 'Compiled with warnings';
+                } else {
+                    output.className = 'output-content success';
+                    statusIndicator.className = 'status-indicator';
+                    statusText.textContent = 'Compilation successful';
+                }
+                
+                output.textContent = result;
+                
+            } catch (error) {
+                output.className = 'output-content error';
+                output.textContent = `❌ Compilation Error:\n\n${error.message}\n\nPlease check your internet connection and try again.`;
+                statusIndicator.className = 'status-indicator error';
+                statusText.textContent = 'Network error';
+            }
+        }
+        
+        // Exponential backoff retry wrapper (good practice for external APIs)
+        async function fetchWithRetry(url, options, maxRetries = 3) {
+            for (let i = 0; i < maxRetries; i++) {
+                try {
+                    const response = await fetch(url, options);
+                    if (response.ok) return response;
+                    // Throw error to trigger retry if status is not 2xx
+                    throw new Error(`Non-OK HTTP status: ${response.status}`);
+                } catch (error) {
+                    if (i === maxRetries - 1) throw error; // Re-throw on last attempt
+                    const delay = Math.pow(2, i) * 1000; // Exponential backoff (1s, 2s, 4s)
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                }
+            }
+        }
+
+        async function compileWithPiston(files, stdinContent) {
+            const response = await fetchWithRetry('https://emkc.org/api/v2/piston/execute', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    language: 'cpp',
+                    version: '10.2.0',
+                    files: files,
+                    stdin: stdinContent, // Send the captured input here
+                    args: []
+                })
+            });
+            
+            const data = await response.json();
+            const run = data.run;
+            
+            if (run.stdout) {
+                return run.stdout;
+            } else if (run.stderr) {
+                return run.stderr;
+            } else {
+                return "✅ Program executed successfully (no output)";
+            }
+        }
+
+        function clearOutput() {
+            const output = document.getElementById('output');
+            output.textContent = '// Output cleared\n// Ready for next compilation';
+            output.className = 'output-content';
+            
+            // Also clear input
+            document.getElementById('programInput').value = '';
+            
+            const statusIndicator = document.getElementById('statusIndicator');
+            const statusText = document.getElementById('statusText');
+            statusIndicator.className = 'status-indicator';
+            statusText.textContent = 'Ready to compile';
+        }
+
+        function loadExample(exampleName) {
+            const example = EXAMPLES.find(e => e.name === exampleName);
+
+            if (!example) {
+                showMessage(`Example ${exampleName} not found.`, 'error');
+                return;
+            }
+            
+            // Overwrite the active file content with the example
+            projectFiles[activeFileId].name = example.name;
+            editor.setValue(example.content);
+            document.getElementById('programInput').value = example.input || ''; // Pre-fill input box
+            
+            saveFileContent();
+            
+            document.getElementById('currentFileName').textContent = `📁 ${example.name}`;
+            const statusText = document.getElementById('statusText');
+            statusText.textContent = `${example.name} loaded`;
+        }
+
+        function toggleTheme() {
+            if (!editor) return;
+
+            const body = document.body;
+            const themeBtn = document.getElementById('themeToggleButton');
+
+            isDarkTheme = !isDarkTheme;
+            
+            if (isDarkTheme) {
+                // Switch to Dark Theme
+                body.classList.remove('light-theme');
+                monaco.editor.setTheme('vs-dark');
+                themeBtn.innerHTML = '☀️'; // Button shows sun (to switch to light)
+                themeBtn.title = 'Switch to Light Theme';
+            } else {
+                // Switch to Light Theme
+                body.classList.add('light-theme');
+                monaco.editor.setTheme('vs-light');
+                themeBtn.innerHTML = '🌙'; // Button shows moon (to switch to dark)
+                themeBtn.title = 'Switch to Dark Theme';
+            }
+            
+            const statusText = document.getElementById('statusText');
+            statusText.textContent = isDarkTheme ? 'Dark theme activated' : 'Light theme activated';
+        }
+
+        // --- Utility Functions ---
+        
+        /**
+         * Shows a temporary, non-blocking message box.
+         */
+        function showMessage(message, type = 'info') {
+            const statusText = document.getElementById('statusText');
+            statusText.textContent = message;
+            
+            const indicator = document.getElementById('statusIndicator');
+            indicator.classList.remove('error', 'loading');
+            
+            if (type === 'error') {
+                indicator.classList.add('error');
+            } else if (type === 'success') {
+                indicator.style.backgroundColor = 'var(--success)';
+            }
+            // Reset after 3 seconds
+            setTimeout(() => {
+                // Only reset if the status hasn't changed to loading/error/etc.
+                if (statusText.textContent === message) {
+                    indicator.style.backgroundColor = 'var(--success)'; // back to default
+                    statusText.textContent = 'Ready to compile';
+                }
+            }, 3000);
+        }
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            const isCtrlOrCmd = e.ctrlKey || e.metaKey;
+            
+            if (isCtrlOrCmd && e.key === 'Enter') {
+                e.preventDefault();
+                runCode();
+            }
+            if (isCtrlOrCmd && e.key === 'l') {
+                e.preventDefault();
+                clearOutput();
+            }
+            if (isCtrlOrCmd && e.key === 'e') {
+                e.preventDefault();
+                // Load the default interactive input example for educational clarity
+                loadExampleAndClose('InteractiveInput.cpp'); 
+            }
+            
+            // New File Management Shortcuts
+            if (isCtrlOrCmd && e.key === 'n') {
+                e.preventDefault();
+                createNewFileAndSwitch();
+            }
+            
+            if (isCtrlOrCmd && e.key === 'o') {
+                e.preventDefault();
+                openFileManagerModal();
+            }
+            
+            if (isCtrlOrCmd && e.key === 's') {
+                e.preventDefault();
+                // Ctrl+S triggers saveFileContent automatically via Monaco, but we 
+                // explicitly call export for a professional touch.
+                exportActiveFile(); 
+            }
+            
+            if (e.key === 'Escape') {
+                if (currentFocusMode) {
+                    exitFocusMode();
+                } else if (document.getElementById('fileManagerModal').style.display === 'flex') {
+                    closeFileManagerModal();
+                } else if (document.getElementById('fileDropdown').classList.contains('show')) {
+                    closeFileMenu();
+                } else if (document.getElementById('examplesDropdown').classList.contains('show')) {
+                    closeExamplesMenu();
+                }
+            }
+        });
+        
+        // Close menus when clicking anywhere on the body except the menu/button
+        document.body.addEventListener('click', (e) => {
+            // Close File Menu
+            const fileDropdown = document.getElementById('fileDropdown');
+            const fileButton = document.getElementById('fileMenuButton');
+            if (fileDropdown && fileButton && !fileDropdown.contains(e.target) && e.target !== fileButton) {
+                closeFileMenu();
+            }
+            
+            // Close Examples Menu
+            const examplesDropdown = document.getElementById('examplesDropdown');
+            const examplesButton = document.getElementById('examplesMenuButton');
+            if (examplesDropdown && examplesButton && !examplesDropdown.contains(e.target) && e.target !== examplesButton) {
+                closeExamplesMenu();
+            }
+        });
+
+        // Initialize the application
+        window.onload = init;
+    </script>
+</body>
+</html>
