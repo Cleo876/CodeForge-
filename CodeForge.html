@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CodeForge™ - C++ Browser IDE</title>
     <script>
-        const TOOL_VERSION = '2.5.2'; // Clear Button Moved
+        const TOOL_VERSION = '2.5.3'; // C++ Standards and Default Libraries
     </script>
     <!-- Firebase Imports (Used for context, not yet active for file sync) -->
     <script type="module">
@@ -744,6 +744,33 @@
             align-items: center;
             flex-wrap: wrap;
         }
+        
+        /* Compiler Standard Dropdown */
+        .compiler-select {
+            background: rgba(102, 126, 234, 0.2);
+            border: 1px solid var(--secondary);
+            color: var(--secondary);
+            padding: 0.6rem 1.0rem;
+            border-radius: var(--radius);
+            font-weight: 500;
+            font-size: 0.9rem;
+            cursor: pointer;
+            appearance: none; /* Hide default dropdown arrow */
+            /* Custom dropdown arrow SVG (White for dark theme) */
+            background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2212%22%20height%3D%2212%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23667eea%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpolyline%20points%3D%226%209%2012%2015%2018%209%22%3E%3C%2Fpolyline%3E%3C%2Fsvg%3E");
+            background-repeat: no-repeat;
+            background-position: right 0.5rem center;
+            padding-right: 2rem; /* Make space for the custom arrow */
+        }
+
+        body.light-theme .compiler-select {
+            background: rgba(59, 130, 246, 0.1);
+            border-color: rgba(59, 130, 246, 0.3);
+            color: var(--secondary);
+            /* Custom dropdown arrow SVG (Blue for light theme) */
+            background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2212%22%20height%3D%2212%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%233b82f6%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpolyline%20points%3D%226%209%2012%2015%2018%209%22%3E%3C%2Fpolyline%3E%3C%2Fsvg%3E");
+        }
+
 
         .btn {
             background: linear-gradient(135deg, var(--secondary) 0%, var(--accent) 100%);
@@ -1258,7 +1285,15 @@
                                     Run Code
                                 </button>
                                 
-                                <!-- NEW: Examples Dropdown Menu -->
+                                <!-- NEW: C++ Standard Selector -->
+                                <select id="standardSelector" onchange="updateCompilerStandard(this.value)" class="compiler-select">
+                                    <option value="c++11">C++11</option>
+                                    <option value="c++14">C++14</option>
+                                    <option value="c++17" selected>C++17</option>
+                                    <option value="c++20">C++20</option>
+                                </select>
+                                
+                                <!-- Examples Dropdown Menu -->
                                 <div class="dropdown">
                                     <button class="btn btn-outline dropdown-btn" id="examplesMenuButton" onclick="toggleExamplesMenu(event)">
                                         <span>📚</span>
@@ -1374,6 +1409,7 @@
         let isDarkTheme = true;
         let isResizing = false;
         let currentFocusMode = null; // 'editor', 'output', or null
+        let cppStandard = 'c++17'; // NEW: Default to modern C++17
         
         // --- File Management State ---
         const LOCAL_STORAGE_KEY = 'codeforge_cpp_project';
@@ -1389,6 +1425,8 @@
                 content: `// Loop Input Demo (Requires 3 sets of input)
 #include <iostream>
 #include <string>
+#include <vector>
+#include <algorithm>
 using namespace std;
 
 int main() {
@@ -1419,6 +1457,8 @@ int main() {
                 content: `// Interactive Input Example (Two Variables)
 #include <iostream>
 #include <string>
+#include <vector>
+#include <algorithm>
 using namespace std;
 
 int main() {
@@ -1509,10 +1549,11 @@ int main() {
             
             if (savedProject) {
                 try {
-                    const { files, activeId, counter } = JSON.parse(savedProject);
+                    const { files, activeId, counter, standard } = JSON.parse(savedProject);
                     projectFiles = files;
                     activeFileId = activeId;
                     fileCounter = counter || 1;
+                    if (standard) cppStandard = standard; // Load saved standard
                 } catch (e) {
                     console.error("Failed to load project from localStorage:", e);
                     // Fallback to default if load fails
@@ -1543,7 +1584,8 @@ int main() {
             localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({
                 files: projectFiles,
                 activeId: activeFileId,
-                counter: fileCounter
+                counter: fileCounter,
+                standard: cppStandard // Save the currently selected standard
             }));
             // Update status to confirm auto-save
             const statusText = document.getElementById('statusText');
@@ -1679,7 +1721,7 @@ int main() {
 
             projectFiles[newId] = {
                 name: newName,
-                content: getInitialCode().replace('main.cpp', newName).replace('Welcome', `New file: ${newName}`),
+                content: getInitialCode(),
                 id: newId
             };
             fileCounter++;
@@ -1883,37 +1925,42 @@ int main() {
                     
                     // Set the version text in the status bar now that TOOL_VERSION is defined
                     document.getElementById('versionText').textContent = TOOL_VERSION;
+                    
+                    // Initialize Standard Selector UI
+                    document.getElementById('standardSelector').value = cppStandard; 
                 }, 800);
             }, 3000);
+        }
+        
+        function updateCompilerStandard(standard) {
+            if (['c++11', 'c++14', 'c++17', 'c++20'].includes(standard)) {
+                cppStandard = standard;
+                showMessage(`C++ Standard set to ${standard.toUpperCase()}.`, 'info');
+                saveProject(); // Save the new standard setting
+            } else {
+                showMessage(`Invalid standard selected: ${standard}`, 'error');
+            }
         }
 
         function getInitialCode() {
             return `// CodeForge™ - C++ Browser IDE
 #include <iostream>
 #include <string>
+#include <vector>     // For dynamic arrays
+#include <algorithm>  // For sorting and searching
+#include <cmath>      // For math functions (e.g., sqrt, pow)
 using namespace std;
 
 int main() {
     cout << "🚀 Welcome to CodeForge™!" << endl;
     cout << "==========================" << endl;
     
+    // Current Standard: ${cppStandard} (Select above)
     // To use interactive input (cin >>), enter ALL answers below, one per line.
     
-    // Example: Use the 'Examples' dropdown above to load a demo.
-    
-    /*
-    string name;
-    int age;
-    
-    cout << "Enter your name: ";
-    cin >> name;
-    
-    cout << "Enter your age: ";
-    cin >> age;
-    
-    cout << "Hello, " << name << "! You are " << age << " years old." << endl;
-    */
-    
+    // Example use of <cmath>:
+    cout << "Square root of 9: " << sqrt(9.0) << endl;
+
     cout << "🎉 Program executed successfully!" << endl;
     return 0;
 }`;
@@ -2102,10 +2149,10 @@ int main() {
             output.textContent = "🔄 Compiling your C++ code...";
             output.className = 'output-content';
             statusIndicator.className = 'status-indicator loading';
-            statusText.textContent = `Compiling ${activeFile.name} with GCC...`;
+            statusText.textContent = `Compiling ${activeFile.name} with GCC (${cppStandard.toUpperCase()})...`;
             
             try {
-                // Pass the programInput as stdin
+                // Pass the programInput as stdin and the compiler standard as an argument
                 const result = await compileWithPiston(filesToCompile, stdinToSend);
                 
                 // Determine output type and update UI
@@ -2160,7 +2207,7 @@ int main() {
                     version: '10.2.0',
                     files: files,
                     stdin: stdinContent, // Send the captured input here
-                    args: []
+                    args: [`-std=${cppStandard}`] // NEW: Pass the selected C++ standard flag
                 })
             });
             
